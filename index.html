@@ -7,7 +7,7 @@
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
         body {
-            font-family: 'Arial', sans-serif;
+            font-family: Arial, sans-serif;
             max-width: 600px;
             margin: 0 auto;
             padding: 20px;
@@ -16,28 +16,18 @@
         #reader {
             width: 100%;
             margin: 20px auto;
+            border: 2px solid #ddd;
+            min-height: 300px;
             position: relative;
         }
-        #reader__dashboard_section {
-            text-align: center;
-        }
-        .status {
+        #status {
             padding: 10px;
             margin: 10px 0;
             border-radius: 5px;
         }
-        .scanning {
-            background: #e3f2fd;
-            color: #1565c0;
-        }
-        .success {
-            background: #e8f5e9;
-            color: #2e7d32;
-        }
-        .error {
-            background: #ffebee;
-            color: #c62828;
-        }
+        .scanning { background: #e3f2fd; color: #1565c0; }
+        .success { background: #e8f5e9; color: #2e7d32; }
+        .error { background: #ffebee; color: #c62828; }
         button {
             background: #2196f3;
             color: white;
@@ -51,34 +41,36 @@
 </head>
 <body>
     <h1>TC Cards QR Scanner</h1>
-    <p>Scan your TC Cards QR code</p>
+    <p>Point your camera at a TC Cards QR code</p>
     
     <div id="reader"></div>
-    <div id="status" class="status scanning">Ready to scan...</div>
-    
-    <script>
-        // Configuration
-        const config = {
-            fps: 10,
-            qrbox: 250,
-            supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA],
-            rememberLastUsedCamera: true
-        };
+    <div id="status" class="scanning">Initializing camera...</div>
+    <div id="debug" style="text-align: left; font-family: monospace;"></div>
 
-        // Initialize scanner
-        const html5QrCode = new Html5Qrcode("reader");
-        
+    <script>
+        // Debug output
+        function debugLog(message) {
+            const debugDiv = document.getElementById('debug');
+            debugDiv.innerHTML += `<div>${new Date().toLocaleTimeString()}: ${message}</div>`;
+            console.log(message);
+        }
+
+        // Update status message
         function updateStatus(message, type = 'scanning') {
             const status = document.getElementById('status');
             status.textContent = message;
             status.className = `status ${type}`;
+            debugLog(`Status: ${message}`);
         }
 
-        function onScanSuccess(decodedText) {
+        // Process scanned QR code
+        function processScannedCode(decodedText) {
+            debugLog(`Scanned: ${decodedText}`);
+            
             // Validate TC Cards format
             if (!decodedText.includes('card.tccards.tn/@id_')) {
                 updateStatus("Invalid TC Cards QR code", "error");
-                return;
+                return null;
             }
 
             // Format URL
@@ -88,41 +80,70 @@
             }
             url = url.replace('http://', 'https://'); // Force HTTPS
             
-            updateStatus(`Found: ${url} - Redirecting...`, "success");
-            
-            // Redirect after brief delay
-            setTimeout(() => {
-                window.location.href = url;
-            }, 800);
+            debugLog(`Formatted URL: ${url}`);
+            return url;
         }
 
-        function startScanner() {
-            Html5Qrcode.getCameras().then(cameras => {
-                if (cameras && cameras.length > 0) {
-                    // Prefer rear camera
-                    const backCamera = cameras.find(cam => 
-                        cam.label.toLowerCase().includes('back') || 
-                        cam.label.toLowerCase().includes('rear'));
-                    
-                    const cameraId = backCamera ? backCamera.id : cameras[0].id;
-                    
-                    html5QrCode.start(
-                        cameraId,
-                        config,
-                        onScanSuccess,
-                        () => {} // Ignore scan errors
-                    ).then(() => {
-                        updateStatus("Ready to scan...", "scanning");
-                    });
-                } else {
+        // Initialize and start scanner
+        async function startScanner() {
+            debugLog("Starting scanner initialization...");
+            updateStatus("Initializing camera...");
+
+            try {
+                const cameras = await Html5Qrcode.getCameras();
+                debugLog(`Found ${cameras.length} cameras`);
+                
+                if (cameras.length === 0) {
+                    throw new Error("No cameras found");
+                }
+
+                // Prefer rear camera
+                const backCamera = cameras.find(cam => 
+                    cam.label.toLowerCase().includes('back') || 
+                    cam.label.toLowerCase().includes('rear'));
+                
+                const cameraId = backCamera ? backCamera.id : cameras[0].id;
+                debugLog(`Using camera: ${cameraId}`);
+
+                const html5QrCode = new Html5Qrcode("reader", { verbose: true });
+                
+                await html5QrCode.start(
+                    cameraId,
+                    {
+                        fps: 10,
+                        qrbox: 250,
+                        facingMode: "environment"
+                    },
+                    (decodedText) => {
+                        const url = processScannedCode(decodedText);
+                        if (url) {
+                            updateStatus(`Redirecting to: ${url}`, "success");
+                            setTimeout(() => {
+                                window.location.href = url;
+                            }, 800);
+                        }
+                    },
+                    (errorMessage) => {
+                        debugLog(`Scan error: ${errorMessage}`);
+                    }
+                );
+
+                updateStatus("Ready to scan - point camera at QR code");
+                debugLog("Scanner started successfully");
+
+            } catch (error) {
+                debugLog(`Error: ${error.message}`);
+                updateStatus(`Error: ${error.message}`, "error");
+                
+                if (error.name === 'NotAllowedError') {
+                    updateStatus("Please allow camera access", "error");
+                } else if (error.name === 'NotFoundError') {
                     updateStatus("No camera found", "error");
                 }
-            }).catch(err => {
-                updateStatus("Camera error: " + err.message, "error");
-            });
+            }
         }
 
-        // Start when page loads
+        // Start scanner when page loads
         document.addEventListener('DOMContentLoaded', startScanner);
     </script>
 </body>

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Qr-Viewer</title>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+</head>
+<body>
+    <div id="reader"></div>
+
+    <script>
+        function onScanSuccess(decodedText) {
+            // Check if the decoded text matches the expected format
+            if (decodedText.includes('card.tccards.tn/@id_')) {
+                // Add https:// to the URL and redirect
+                const url = 'https://' + decodedText;
+                window.location.href = url;
+            }
+        }
+
+        // Initialize QR scanner
+        const html5QrcodeScanner = new Html5QrcodeScanner(
+            "reader", { fps: 10, qrbox: 250 });
+        html5QrcodeScanner.render(onScanSuccess);
+    </script>
+
+    <style>
+        #reader {
+            width: 100%;
+            max-width: 600px;
+            margin: 20px auto;
+        }
+    </style>
+</body>
+</html>

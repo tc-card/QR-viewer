@@ -8,7 +8,34 @@
     <script src="https://unpkg.com/html5-qrcode"></script>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+
     <link rel="stylesheet" href="styles.css">
+    <style>
+        /* Your existing CSS styles here */
+        .snapshot-preview {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.9);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .snapshot-preview img {
+            max-width: 80%;
+            max-height: 60%;
+            border: 2px solid white;
+            margin-bottom: 20px;
+        }
+        .snapshot-actions {
+            display: flex;
+            gap: 15px;
+        }
+    </style>
 </head>
 
 <body>
@@ -46,7 +73,18 @@
                 <i class="fas fa-lightbulb"></i> Toggle Flash
             </button>
         </div>
-
+    
+    <div class="snapshot-preview" id="snapshotPreview">
+        <img id="snapshotImage" src="" alt="Scanned QR Code">
+        <div class="snapshot-actions">
+            <button id="confirmRedirect" class="btn btn-success">
+                <i class="fas fa-check"></i> Continue
+            </button>
+            <button id="cancelRedirect" class="btn btn-error">
+                <i class="fas fa-times"></i> Cancel
+            </button>
+        </div>
+    </div>
         <div class="manual-input">
             <h3>Or enter code manually:</h3>
             <input type="text" id="manualCode" placeholder="Enter TC Cards code">
@@ -65,7 +103,9 @@
                 <li>Try using a different browser (Chrome/Firefox recommended)</li>
             </ul>
         </div>
-    </div>
+    </div>    
+    <!-- Your existing HTML here -->
+
 
     <script>
         // DOM elements
@@ -80,124 +120,71 @@
         const scannerContainer = document.getElementById('scannerContainer');
         const cameraHelp = document.getElementById('cameraHelp');
         // Global variables
-        let html5QrCode;
-        let currentCameraId = null;
-        let cameras = [];
-        let flashOn = false;
-        let isScanning = false;
 
-        // Handle successful scan - UPDATED WITH BETTER DEBUGGING
-        function onScanSuccess(decodedText, decodedResult) {
+        // Add to your existing global variables
+        let lastDetectedUrl = null;
+        const snapshotPreview = document.getElementById('snapshotPreview');
+        const snapshotImage = document.getElementById('snapshotImage');
+        const confirmRedirect = document.getElementById('confirmRedirect');
+        const cancelRedirect = document.getElementById('cancelRedirect');
+
+        // Modified onScanSuccess function
+        async function onScanSuccess(decodedText, decodedResult) {
+            // Only process if we're not already showing a preview
+            if (snapshotPreview.style.display === 'flex') return;
+            
             console.log("Raw scanned text:", decodedText);
-            console.log("Decoded result:", decodedResult);
-
-            // Visual feedback
-            document.querySelector('.scanner-overlay').classList.add('success');
-            updateStatus("Code scanned successfully!", "check", "success");
-
-            // Check if the decoded text matches the expected format
+            
+            // Validate the QR code format
             const tcCardsPattern = /^(https:\/\/)?card\.tccards\.tn\/@id_[a-zA-Z0-9-]+$/;
-
-            if (tcCardsPattern.test(decodedText)) {
-                let url = decodedText;
-
-                // Ensure URL starts with https://
-                if (!url.startsWith('https://')) {
-                    url = 'https://' + url;
-                }
-
-                // Debug output
-                console.log("Formatted URL:", url);
-                updateStatus(`Redirecting to: ${url}`, "external-link-alt", "success");
-
-                // Redirect after short delay
-                setTimeout(() => {
-                    window.location.href = url;
-                }, 800);
-            } else {
-                console.warn("Invalid TC Cards QR code format:", decodedText);
+            if (!tcCardsPattern.test(decodedText)) {
                 showError("Invalid TC Cards QR code format");
+                return;
+            }
 
-                // Resume scanning after showing error
-                setTimeout(() => {
-                    document.querySelector('.scanner-overlay').classList.remove('success');
-                    updateStatus("Position the QR code within the frame to scan", "search");
-                }, 2000);
+            // Format the URL
+            lastDetectedUrl = decodedText.startsWith('http') ? decodedText : 'https://' + decodedText;
+            
+            try {
+                // Freeze the camera and take snapshot
+                const canvas = document.querySelector('#reader canvas');
+                const imageData = canvas.toDataURL('image/png');
+                
+                // Show preview
+                snapshotImage.src = imageData;
+                snapshotPreview.style.display = 'flex';
+                
+                // Update status
+                updateStatus(`Detected: ${lastDetectedUrl}`, "check", "success");
+                
+            } catch (err) {
+                console.error("Error capturing snapshot:", err);
+                // Fallback to immediate redirect if snapshot fails
+                proceedWithRedirect();
             }
         }
 
-        // Initialize scanner with better error handling
-        function initScanner(cameraId = null) {
-            console.log("Initializing scanner...");
-            hideCameraFallback();
-
-            // Create new scanner instance
-            html5QrCode = new Html5Qrcode("reader", {
-                verbose: true // Enable detailed logging
-            });
-
-            // Get available cameras
-            Html5Qrcode.getCameras().then(devices => {
-                if (devices && devices.length > 0) {
-                    console.log("Available cameras:", devices);
-                    cameras = devices;
-
-                    // Try to find back camera first
-                    const backCamera = cameras.find(cam =>
-                        cam.label.toLowerCase().includes('back') ||
-                        cam.label.toLowerCase().includes('rear'));
-
-                    const cameraToUse = cameraId || (backCamera || cameras[0]).id;
-                    console.log("Starting with camera:", cameraToUse);
-
-                    startScanner(cameraToUse);
-                    updateCameraButton();
-                } else {
-                    console.error("No cameras found");
-                    showCameraError("No cameras found. Please ensure you have a camera connected.");
-                }
-            }).catch(err => {
-                console.error("Camera access error:", err);
-                handleCameraError(err);
-            });
+        // New functions for handling the preview
+        function proceedWithRedirect() {
+            if (!lastDetectedUrl) return;
+            
+            snapshotPreview.style.display = 'none';
+            updateStatus(`Redirecting to: ${lastDetectedUrl}`, "external-link-alt", "success");
+            
+            setTimeout(() => {
+                window.location.href = lastDetectedUrl;
+            }, 800);
         }
 
-        // Start scanner with detailed configuration
-        function startNewScanner(cameraId) {
-            console.log("Starting scanner with camera:", cameraId);
-            currentCameraId = cameraId;
-            isScanning = true;
-            hideCameraFallback();
-            enableControls();
-
-            const config = {
-                fps: 10,
-                qrbox: { width: 250, height: 250 },
-                aspectRatio: 1.777778, // 16:9
-                disableFlip: false,
-                supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA],
-                videoConstraints: {
-                    facingMode: "environment", // Prefer rear camera
-                    deviceId: cameraId
-                }
-            };
-
-            html5QrCode.start(
-                cameraId,
-                config,
-                onScanSuccess,
-                (errorMessage) => {
-                    console.log("Scan error:", errorMessage);
-                    // Don't show all errors to user
-                }
-            ).then(() => {
-                console.log("Scanner started successfully");
-                updateStatus("Position the QR code within the frame to scan", "search");
-            }).catch(err => {
-                console.error("Failed to start scanner:", err);
-                handleCameraError(err);
-            });
+        function cancelRedirectAction() {
+            snapshotPreview.style.display = 'none';
+            lastDetectedUrl = null;
+            updateStatus("Scan cancelled. Ready to scan again.", "search");
         }
+
+        // Event listeners for the preview buttons
+        confirmRedirect.addEventListener('click', proceedWithRedirect);
+        cancelRedirect.addEventListener('click', cancelRedirectAction);
 
         // Handle camera errors
         function handleCameraError(err) {

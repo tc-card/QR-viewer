@@ -7,6 +7,7 @@
     <script src="https://unpkg.com/html5-qrcode"></script>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div class="container">
@@ -66,7 +67,7 @@
 
     <script>
         // Global variables
-        let html5QrcodeScanner;
+        let html5QrCode;
         let currentCameraId = null;
         let cameras = [];
         let flashOn = false;
@@ -87,47 +88,32 @@
         // Initialize scanner
         function initScanner(cameraId = null) {
             hideCameraFallback();
+            html5QrCode = new Html5Qrcode("reader");
             
-            const config = { 
-                fps: 10, 
-                qrbox: { width: 250, height: 250 },
-                supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA],
-                rememberLastUsedCamera: true
-            };
-            
-            html5QrcodeScanner = new Html5QrcodeScanner("reader", config);
-            
-            if (cameraId) {
-                startScanner(cameraId);
-            } else {
-                // Get list of cameras
-                Html5Qrcode.getCameras().then(devices => {
-                    if (devices && devices.length > 0) {
-                        cameras = devices;
-                        // Try to find back camera first
-                        const backCamera = cameras.find(cam => 
-                            cam.label.toLowerCase().includes('back') || 
-                            cam.label.toLowerCase().includes('rear'));
-                        const cameraToUse = backCamera || cameras[0];
-                        startScanner(cameraToUse.id);
-                        updateCameraButton();
-                    } else {
-                        showCameraError("No cameras found. Please ensure you have a camera connected.");
-                    }
-                }).catch(err => {
-                    handleCameraError(err);
-                });
-            }
+            Html5Qrcode.getCameras().then(devices => {
+                if (devices && devices.length > 0) {
+                    cameras = devices;
+                    const backCamera = cameras.find(cam => 
+                        cam.label.toLowerCase().includes('back') || 
+                        cam.label.toLowerCase().includes('rear'));
+                    const cameraToUse = cameraId || (backCamera || cameras[0]).id;
+                    startScanner(cameraToUse);
+                    updateCameraButton();
+                } else {
+                    showCameraError("No cameras found. Please ensure you have a camera connected.");
+                }
+            }).catch(err => {
+                handleCameraError(err);
+            });
         }
 
-        // Start the scanner with specific camera
+        // Start the scanner
         function startScanner(cameraId) {
             if (isScanning) {
-                html5QrcodeScanner.clear().then(() => {
-                    isScanning = false;
+                stopScanner().then(() => {
                     startNewScanner(cameraId);
                 }).catch(err => {
-                    console.error("Failed to clear scanner:", err);
+                    console.error("Failed to stop scanner:", err);
                     startNewScanner(cameraId);
                 });
             } else {
@@ -135,17 +121,32 @@
             }
         }
 
+        // Stop the scanner
+        function stopScanner() {
+            return html5QrCode.stop().then(() => {
+                isScanning = false;
+            }).catch(err => {
+                console.error("Failed to stop scanner:", err);
+                isScanning = false;
+            });
+        }
+
+        // Start new scanner
         function startNewScanner(cameraId) {
             currentCameraId = cameraId;
             isScanning = true;
             hideCameraFallback();
             enableControls();
             
-            html5QrcodeScanner.start(
+            const config = { 
+                fps: 10,
+                qrbox: { width: 250, height: 250 },
+                facingMode: "environment"
+            };
+            
+            html5QrCode.start(
                 cameraId,
-                {
-                    facingMode: "environment" // Prefer rear camera
-                },
+                config,
                 onScanSuccess,
                 onScanError
             ).then(() => {
@@ -157,22 +158,16 @@
 
         // Handle successful scan
         function onScanSuccess(decodedText) {
-            // Visual feedback
             document.querySelector('.scanner-overlay').classList.add('success');
             updateStatus("Code scanned successfully!", "check", "success");
             
-            // Check if the decoded text matches the expected format
             if (decodedText.includes('card.tccards.tn/@id_')) {
-                // Add https:// to the URL if not present
                 let url = decodedText.startsWith('http') ? decodedText : 'https://' + decodedText;
-                
-                // Brief delay for user to see success message
                 setTimeout(() => {
                     window.location.href = url;
                 }, 1000);
             } else {
                 showError("This doesn't appear to be a valid TC Cards QR code");
-                // Resume scanning after showing error
                 setTimeout(() => {
                     document.querySelector('.scanner-overlay').classList.remove('success');
                     updateStatus("Position the QR code within the frame to scan", "search");
@@ -227,7 +222,7 @@
             toggleFlashBtn.disabled = true;
         }
 
-        // Toggle between cameras
+        // Event listeners
         toggleCameraBtn.addEventListener('click', () => {
             if (cameras.length < 2) {
                 showError("Only one camera available");
@@ -240,7 +235,6 @@
             updateCameraButton();
         });
 
-        // Toggle flash (if supported)
         toggleFlashBtn.addEventListener('click', async () => {
             if (!('ImageCapture' in window)) {
                 showError("Flash not supported in your browser");
@@ -278,37 +272,31 @@
             }
         });
 
-        // Manual code submission
         submitManualBtn.addEventListener('click', () => {
             const code = manualCodeInput.value.trim();
             if (!code) {
                 showError("Please enter a code");
                 return;
             }
-            
-            // Simulate scan success with manual input
             onScanSuccess(code);
         });
 
-        // Allow manual submit with Enter key
         manualCodeInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
                 submitManualBtn.click();
             }
         });
 
-        // Retry camera access
         retryCameraBtn.addEventListener('click', () => {
             initScanner();
         });
 
-        // Update status message
+        // Helper functions
         function updateStatus(message, icon, type = 'info') {
             statusMessage.innerHTML = `<i class="fas fa-${icon}"></i><p>${message}</p>`;
             statusMessage.className = `status-message ${type}`;
         }
 
-        // Show error message
         function showError(message) {
             updateStatus(message, "exclamation-triangle", "error");
             setTimeout(() => {
@@ -316,7 +304,6 @@
             }, 3000);
         }
 
-        // Update camera button text
         function updateCameraButton() {
             if (cameras.length < 2) {
                 toggleCameraBtn.style.display = 'none';
@@ -336,338 +323,14 @@
         document.addEventListener('DOMContentLoaded', () => {
             initScanner();
             
-            // Check for dark mode preference
             if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
                 document.body.classList.add('dark-mode');
             }
             
-            // Watch for dark mode changes
             window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
                 document.body.classList.toggle('dark-mode', event.matches);
             });
         });
     </script>
-
-    <style>
-        :root {
-            --primary-color: #4285f4;
-            --success-color: #34a853;
-            --error-color: #ea4335;
-            --warning-color: #fbbc05;
-            --dark-bg: #121212;
-            --dark-surface: #1e1e1e;
-            --dark-text: #e0e0e0;
-            --light-bg: #f5f5f5;
-            --light-surface: #ffffff;
-            --light-text: #333333;
-        }
-        
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-        
-        body {
-            font-family: 'Roboto', sans-serif;
-            background-color: var(--light-bg);
-            color: var(--light-text);
-            line-height: 1.6;
-            padding: 20px;
-            transition: background-color 0.3s, color 0.3s;
-        }
-        
-        body.dark-mode {
-            background-color: var(--dark-bg);
-            color: var(--dark-text);
-        }
-        
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: var(--light-surface);
-            border-radius: 12px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-            transition: background-color 0.3s;
-        }
-        
-        .dark-mode .container {
-            background-color: var(--dark-surface);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        }
-        
-        header {
-            text-align: center;
-            margin-bottom: 24px;
-        }
-        
-        header h1 {
-            color: var(--primary-color);
-            margin-bottom: 8px;
-            font-weight: 500;
-        }
-        
-        header p {
-            color: var(--light-text);
-            opacity: 0.8;
-        }
-        
-        .dark-mode header p {
-            color: var(--dark-text);
-        }
-        
-        .scanner-container {
-            position: relative;
-            width: 100%;
-            max-width: 500px;
-            margin: 0 auto 24px;
-            border-radius: 8px;
-            overflow: hidden;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-            background: #000;
-            min-height: 300px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-        
-        #reader {
-            width: 100%;
-            height: auto;
-            min-height: 300px;
-            position: relative;
-        }
-        
-        .scanner-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            border: 2px solid rgba(255, 255, 255, 0.2);
-            border-radius: 8px;
-            transition: border-color 0.3s;
-        }
-        
-        .scanner-overlay.success {
-            border-color: var(--success-color);
-        }
-        
-        .scan-line {
-            position: absolute;
-            top: 0;
-            left: 10%;
-            width: 80%;
-            height: 3px;
-            background: var(--primary-color);
-            animation: scan 2s infinite linear;
-            box-shadow: 0 0 10px rgba(66, 133, 244, 0.5);
-            border-radius: 3px;
-        }
-        
-        .camera-fallback {
-            display: none;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-            padding: 20px;
-            color: white;
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.7);
-        }
-        
-        .camera-fallback i {
-            font-size: 48px;
-            margin-bottom: 16px;
-            color: var(--error-color);
-        }
-        
-        .camera-fallback h3 {
-            margin-bottom: 8px;
-            color: white;
-        }
-        
-        .camera-fallback p {
-            margin-bottom: 16px;
-            opacity: 0.9;
-        }
-        
-        .camera-help {
-            display: none;
-            background: rgba(234, 67, 53, 0.1);
-            border-left: 4px solid var(--error-color);
-            padding: 16px;
-            border-radius: 8px;
-            margin-top: 20px;
-        }
-        
-        .camera-help h3 {
-            color: var(--error-color);
-            margin-bottom: 12px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        
-        .camera-help ul {
-            padding-left: 20px;
-        }
-        
-        .camera-help li {
-            margin-bottom: 8px;
-        }
-        
-        @keyframes scan {
-            0% { top: 0; opacity: 0; }
-            10% { opacity: 1; }
-            90% { opacity: 1; }
-            100% { top: 100%; opacity: 0; }
-        }
-        
-        .status-message {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            background-color: rgba(66, 133, 244, 0.1);
-            color: var(--primary-color);
-        }
-        
-        .status-message i {
-            margin-right: 10px;
-            font-size: 1.2em;
-        }
-        
-        .status-message p {
-            margin: 0;
-        }
-        
-        .status-message.error {
-            background-color: rgba(234, 67, 53, 0.1);
-            color: var(--error-color);
-        }
-        
-        .status-message.success {
-            background-color: rgba(52, 168, 83, 0.1);
-            color: var(--success-color);
-        }
-        
-        .controls {
-            display: flex;
-            justify-content: center;
-            gap: 12px;
-            margin-bottom: 24px;
-        }
-        
-        .btn {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            padding: 10px 16px;
-            background-color: var(--primary-color);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 14px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        
-        .btn i {
-            margin-right: 8px;
-        }
-        
-        .btn:hover {
-            background-color: #3367d6;
-            transform: translateY(-1px);
-        }
-        
-        .btn:active {
-            transform: translateY(0);
-        }
-        
-        .btn.active {
-            background-color: var(--warning-color);
-            color: #333;
-        }
-        
-        .btn:disabled {
-            background-color: #cccccc;
-            cursor: not-allowed;
-            transform: none;
-        }
-        
-        .dark-mode .btn {
-            background-color: #5a95f5;
-        }
-        
-        .dark-mode .btn:hover {
-            background-color: #4a85e5;
-        }
-        
-        .manual-input {
-            margin-top: 24px;
-            text-align: center;
-        }
-        
-        .manual-input h3 {
-            margin-bottom: 12px;
-            font-weight: 500;
-            color: var(--light-text);
-        }
-        
-        .dark-mode .manual-input h3 {
-            color: var(--dark-text);
-        }
-        
-        .manual-input input {
-            width: 100%;
-            max-width: 400px;
-            padding: 12px 16px;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            font-size: 16px;
-            margin-bottom: 12px;
-            transition: border-color 0.3s, box-shadow 0.3s;
-        }
-        
-        .manual-input input:focus {
-            outline: none;
-            border-color: var(--primary-color);
-            box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
-        }
-        
-        .dark-mode .manual-input input {
-            background-color: #2a2a2a;
-            border-color: #444;
-            color: var(--dark-text);
-        }
-        
-        @media (max-width: 600px) {
-            .container {
-                padding: 15px;
-            }
-            
-            .controls {
-                flex-direction: column;
-                align-items: center;
-            }
-            
-            .btn {
-                width: 100%;
-                max-width: 250px;
-            }
-        }
-    </style>
 </body>
 </html>

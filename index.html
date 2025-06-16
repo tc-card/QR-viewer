@@ -38,13 +38,42 @@
             max-height: 200px;
             overflow-y: auto;
         }
+        .scanner-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            border: 2px solid rgba(0, 255, 0, 0.5);
+            box-sizing: border-box;
+        }
+        .scan-line {
+            position: absolute;
+            top: 0;
+            left: 10%;
+            width: 80%;
+            height: 3px;
+            background: rgba(0, 255, 0, 0.5);
+            animation: scan 2s infinite linear;
+        }
+        @keyframes scan {
+            0% { top: 0; opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { top: 100%; opacity: 0; }
+        }
     </style>
 </head>
 <body>
     <h1>TC Cards QR Scanner</h1>
     <p>Point your camera at a TC Cards QR code</p>
     
-    <div id="reader"></div>
+    <div id="reader">
+        <div class="scanner-overlay">
+            <div class="scan-line"></div>
+        </div>
+    </div>
     <div id="status" class="scanning">Initializing camera...</div>
     <div id="debug"></div>
 
@@ -73,7 +102,7 @@
             text = text.trim().replace(/^"(.*)"$/, '$1');
             
             // Check for TC Cards pattern (without https://)
-            const tcCardsPattern = /^card\.tccards\.tn\/@id_[a-zA-Z0-9-]+$/;
+            const tcCardsPattern = /^(card\.tccards\.tn\/@id_[a-zA-Z0-9-]+|https:\/\/card\.tccards\.tn\/@id_[a-zA-Z0-9-]+)$/;
             
             if (!tcCardsPattern.test(text)) {
                 debugLog("INVALID FORMAT - Doesn't match TC Cards pattern");
@@ -81,7 +110,10 @@
             }
             
             // Construct proper URL
-            const url = `https://${text}`;
+            let url = text;
+            if (!url.startsWith('http')) {
+                url = 'https://' + url;
+            }
             debugLog(`FORMATTED URL: ${url}`);
             return url;
         }
@@ -99,17 +131,20 @@
                     throw new Error("No cameras found");
                 }
 
-                // Try to find the standard back camera (not ultra-wide)
+                // Try to find the best camera (not ultra-wide)
                 let cameraId = cameras[0].id;
+                let selectedCamera = cameras[0];
+                
                 for (const cam of cameras) {
                     if (!cam.label.toLowerCase().includes('0.5') && 
                         !cam.label.toLowerCase().includes('ultra') &&
                         !cam.label.toLowerCase().includes('wide')) {
                         cameraId = cam.id;
+                        selectedCamera = cam;
                         break;
                     }
                 }
-                debugLog(`Using camera: ${cameraId}`);
+                debugLog(`Using camera: ${selectedCamera.label}`);
 
                 const html5QrCode = new Html5Qrcode("reader", { 
                     verbose: true,
@@ -122,33 +157,42 @@
                     {
                         fps: 10,
                         qrbox: { width: 200, height: 200 }, // Smaller box for precise scanning
-                        disableFlip: true,
+                        disableFlip: false,
                         focusMode: "continuous", // Better for close-up scanning
                         aspectRatio: 1.0, // Square aspect ratio
                         videoConstraints: {
                             width: { ideal: 1280 }, // Higher resolution
                             height: { ideal: 1280 },
-                            facingMode: "environment"
+                            facingMode: "environment",
+                            deviceId: cameraId
                         }
                     },
                     (decodedText) => {
                         const url = processScannedText(decodedText);
                         if (url) {
                             updateStatus(`Valid TC Card found! Redirecting...`, "success");
+                            // Visual feedback
+                            document.querySelector('.scanner-overlay').style.borderColor = "rgba(0, 255, 0, 0.8)";
                             setTimeout(() => {
                                 window.location.href = url;
                             }, 800);
                         } else {
                             updateStatus("Invalid TC Cards QR code", "error");
+                            // Visual feedback
+                            document.querySelector('.scanner-overlay').style.borderColor = "rgba(255, 0, 0, 0.8)";
                             setTimeout(() => {
                                 updateStatus("Ready to scan", "scanning");
+                                document.querySelector('.scanner-overlay').style.borderColor = "rgba(0, 255, 0, 0.5)";
                             }, 2000);
                         }
                     },
                     (errorMessage) => {
                         debugLog(`Scan error: ${errorMessage}`);
                     }
-                );
+                ).catch(err => {
+                    debugLog(`Scanner start error: ${err}`);
+                    updateStatus(`Scanner error: ${err.message}`, "error");
+                });
 
                 updateStatus("Ready to scan - point at QR code", "scanning");
 

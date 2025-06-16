@@ -158,16 +158,32 @@
 
         // Handle successful scan
         function onScanSuccess(decodedText) {
+            // Visual feedback
             document.querySelector('.scanner-overlay').classList.add('success');
             updateStatus("Code scanned successfully!", "check", "success");
             
+            // Check if the decoded text matches the expected format
             if (decodedText.includes('card.tccards.tn/@id_')) {
-                let url = decodedText.startsWith('http') ? decodedText : 'https://' + decodedText;
+                // Ensure the URL has https:// and proper formatting
+                let url = decodedText;
+                
+                // If it doesn't start with http, add https://
+                if (!url.startsWith('http')) {
+                    url = 'https://' + url;
+                }
+                
+                // Ensure it doesn't have double https://
+                url = url.replace('https://https://', 'https://');
+                
+                console.log("Redirecting to:", url); // For debugging
+                
+                // Brief delay for user to see success message
                 setTimeout(() => {
                     window.location.href = url;
                 }, 1000);
             } else {
                 showError("This doesn't appear to be a valid TC Cards QR code");
+                // Resume scanning after showing error
                 setTimeout(() => {
                     document.querySelector('.scanner-overlay').classList.remove('success');
                     updateStatus("Position the QR code within the frame to scan", "search");

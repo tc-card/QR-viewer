@@ -86,9 +86,9 @@
             return url;
         }
 
-        // Initialize and start scanner
+        // Initialize and start scanner with optimized settings
         async function startScanner() {
-            debugLog("Initializing scanner...");
+            debugLog("Starting scanner initialization...");
             updateStatus("Loading camera...");
 
             try {
@@ -96,25 +96,40 @@
                 debugLog(`Found ${cameras.length} camera(s)`);
                 
                 if (cameras.length === 0) {
-                    throw new Error("No cameras found on this device");
+                    throw new Error("No cameras found");
                 }
 
-                // Prefer rear camera
-                const backCamera = cameras.find(cam => 
-                    cam.label.toLowerCase().includes('back') || 
-                    cam.label.toLowerCase().includes('rear'));
-                
-                const cameraId = backCamera ? backCamera.id : cameras[0].id;
-                debugLog(`Selected camera: ${cameraId}`);
+                // Try to find the standard back camera (not ultra-wide)
+                let cameraId = cameras[0].id;
+                for (const cam of cameras) {
+                    if (!cam.label.toLowerCase().includes('0.5') && 
+                        !cam.label.toLowerCase().includes('ultra') &&
+                        !cam.label.toLowerCase().includes('wide')) {
+                        cameraId = cam.id;
+                        break;
+                    }
+                }
+                debugLog(`Using camera: ${cameraId}`);
 
-                const html5QrCode = new Html5Qrcode("reader");
+                const html5QrCode = new Html5Qrcode("reader", { 
+                    verbose: true,
+                    formatsToSupport: [ Html5QrcodeSupportedFormats.QR_CODE ]
+                });
                 
+                // Optimized config for TC Cards QR codes
                 await html5QrCode.start(
                     cameraId,
                     {
                         fps: 10,
-                        qrbox: 250,
-                        facingMode: "environment"
+                        qrbox: { width: 200, height: 200 }, // Smaller box for precise scanning
+                        disableFlip: true,
+                        focusMode: "continuous", // Better for close-up scanning
+                        aspectRatio: 1.0, // Square aspect ratio
+                        videoConstraints: {
+                            width: { ideal: 1280 }, // Higher resolution
+                            height: { ideal: 1280 },
+                            facingMode: "environment"
+                        }
                     },
                     (decodedText) => {
                         const url = processScannedText(decodedText);
@@ -150,7 +165,7 @@
             }
         }
 
-        // Start when page loads
+        // Start scanner when page loads
         document.addEventListener('DOMContentLoaded', startScanner);
     </script>
 </body>

@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,13 +10,14 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <link rel="stylesheet" href="styles.css">
 </head>
+
 <body>
     <div class="container">
         <header>
             <h1><i class="fas fa-qrcode"></i> TC Cards QR Scanner</h1>
             <p>Scan your TC Cards QR code to view the digital card</p>
         </header>
-        
+
         <div class="scanner-container" id="scannerContainer">
             <div id="reader"></div>
             <div class="scanner-overlay">
@@ -30,12 +32,12 @@
                 </button>
             </div>
         </div>
-        
+
         <div class="status-message" id="statusMessage">
             <i class="fas fa-search"></i>
             <p>Position the QR code within the frame to scan</p>
         </div>
-        
+
         <div class="controls">
             <button id="toggleCamera" class="btn" disabled>
                 <i class="fas fa-camera"></i> Switch Camera
@@ -44,7 +46,7 @@
                 <i class="fas fa-lightbulb"></i> Toggle Flash
             </button>
         </div>
-        
+
         <div class="manual-input">
             <h3>Or enter code manually:</h3>
             <input type="text" id="manualCode" placeholder="Enter TC Cards code">
@@ -52,7 +54,7 @@
                 <i class="fas fa-paper-plane"></i> Submit
             </button>
         </div>
-        
+
         <div class="camera-help" id="cameraHelp">
             <h3><i class="fas fa-question-circle"></i> Camera Troubleshooting</h3>
             <ul>
@@ -66,13 +68,6 @@
     </div>
 
     <script>
-        // Global variables
-        let html5QrCode;
-        let currentCameraId = null;
-        let cameras = [];
-        let flashOn = false;
-        let isScanning = false;
-
         // DOM elements
         const statusMessage = document.getElementById('statusMessage');
         const toggleCameraBtn = document.getElementById('toggleCamera');
@@ -84,105 +79,45 @@
         const retryCameraBtn = document.getElementById('retryCamera');
         const scannerContainer = document.getElementById('scannerContainer');
         const cameraHelp = document.getElementById('cameraHelp');
+        // Global variables
+        let html5QrCode;
+        let currentCameraId = null;
+        let cameras = [];
+        let flashOn = false;
+        let isScanning = false;
 
-        // Initialize scanner
-        function initScanner(cameraId = null) {
-            hideCameraFallback();
-            html5QrCode = new Html5Qrcode("reader");
-            
-            Html5Qrcode.getCameras().then(devices => {
-                if (devices && devices.length > 0) {
-                    cameras = devices;
-                    const backCamera = cameras.find(cam => 
-                        cam.label.toLowerCase().includes('back') || 
-                        cam.label.toLowerCase().includes('rear'));
-                    const cameraToUse = cameraId || (backCamera || cameras[0]).id;
-                    startScanner(cameraToUse);
-                    updateCameraButton();
-                } else {
-                    showCameraError("No cameras found. Please ensure you have a camera connected.");
-                }
-            }).catch(err => {
-                handleCameraError(err);
-            });
-        }
+        // Handle successful scan - UPDATED WITH BETTER DEBUGGING
+        function onScanSuccess(decodedText, decodedResult) {
+            console.log("Raw scanned text:", decodedText);
+            console.log("Decoded result:", decodedResult);
 
-        // Start the scanner
-        function startScanner(cameraId) {
-            if (isScanning) {
-                stopScanner().then(() => {
-                    startNewScanner(cameraId);
-                }).catch(err => {
-                    console.error("Failed to stop scanner:", err);
-                    startNewScanner(cameraId);
-                });
-            } else {
-                startNewScanner(cameraId);
-            }
-        }
-
-        // Stop the scanner
-        function stopScanner() {
-            return html5QrCode.stop().then(() => {
-                isScanning = false;
-            }).catch(err => {
-                console.error("Failed to stop scanner:", err);
-                isScanning = false;
-            });
-        }
-
-        // Start new scanner
-        function startNewScanner(cameraId) {
-            currentCameraId = cameraId;
-            isScanning = true;
-            hideCameraFallback();
-            enableControls();
-            
-            const config = { 
-                fps: 10,
-                qrbox: { width: 250, height: 250 },
-                facingMode: "environment"
-            };
-            
-            html5QrCode.start(
-                cameraId,
-                config,
-                onScanSuccess,
-                onScanError
-            ).then(() => {
-                updateStatus("Position the QR code within the frame to scan", "search");
-            }).catch(err => {
-                handleCameraError(err);
-            });
-        }
-
-        // Handle successful scan
-        function onScanSuccess(decodedText) {
             // Visual feedback
             document.querySelector('.scanner-overlay').classList.add('success');
             updateStatus("Code scanned successfully!", "check", "success");
-            
+
             // Check if the decoded text matches the expected format
-            if (decodedText.includes('card.tccards.tn/@id_')) {
-                // Ensure the URL has https:// and proper formatting
+            const tcCardsPattern = /^(https:\/\/)?card\.tccards\.tn\/@id_[a-zA-Z0-9-]+$/;
+
+            if (tcCardsPattern.test(decodedText)) {
                 let url = decodedText;
-                
-                // If it doesn't start with http, add https://
-                if (!url.startsWith('http')) {
+
+                // Ensure URL starts with https://
+                if (!url.startsWith('https://')) {
                     url = 'https://' + url;
                 }
-                
-                // Ensure it doesn't have double https://
-                url = url.replace('https://https://', 'https://');
-                
-                console.log("Redirecting to:", url); // For debugging
-                
-                // Brief delay for user to see success message
+
+                // Debug output
+                console.log("Formatted URL:", url);
+                updateStatus(`Redirecting to: ${url}`, "external-link-alt", "success");
+
+                // Redirect after short delay
                 setTimeout(() => {
                     window.location.href = url;
-                }, 1000);
+                }, 800);
             } else {
-                showError("This doesn't appear to be a valid TC Cards QR code");
+                console.warn("Invalid TC Cards QR code format:", decodedText);
+                showError("Invalid TC Cards QR code format");
+
                 // Resume scanning after showing error
                 setTimeout(() => {
                     document.querySelector('.scanner-overlay').classList.remove('success');
@@ -191,16 +126,84 @@
             }
         }
 
-        // Handle scan errors
-        function onScanError(errorMessage) {
-            console.log("Scan error:", errorMessage);
+        // Initialize scanner with better error handling
+        function initScanner(cameraId = null) {
+            console.log("Initializing scanner...");
+            hideCameraFallback();
+
+            // Create new scanner instance
+            html5QrCode = new Html5Qrcode("reader", {
+                verbose: true // Enable detailed logging
+            });
+
+            // Get available cameras
+            Html5Qrcode.getCameras().then(devices => {
+                if (devices && devices.length > 0) {
+                    console.log("Available cameras:", devices);
+                    cameras = devices;
+
+                    // Try to find back camera first
+                    const backCamera = cameras.find(cam =>
+                        cam.label.toLowerCase().includes('back') ||
+                        cam.label.toLowerCase().includes('rear'));
+
+                    const cameraToUse = cameraId || (backCamera || cameras[0]).id;
+                    console.log("Starting with camera:", cameraToUse);
+
+                    startScanner(cameraToUse);
+                    updateCameraButton();
+                } else {
+                    console.error("No cameras found");
+                    showCameraError("No cameras found. Please ensure you have a camera connected.");
+                }
+            }).catch(err => {
+                console.error("Camera access error:", err);
+                handleCameraError(err);
+            });
+        }
+
+        // Start scanner with detailed configuration
+        function startNewScanner(cameraId) {
+            console.log("Starting scanner with camera:", cameraId);
+            currentCameraId = cameraId;
+            isScanning = true;
+            hideCameraFallback();
+            enableControls();
+
+            const config = {
+                fps: 10,
+                qrbox: { width: 250, height: 250 },
+                aspectRatio: 1.777778, // 16:9
+                disableFlip: false,
+                supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA],
+                videoConstraints: {
+                    facingMode: "environment", // Prefer rear camera
+                    deviceId: cameraId
+                }
+            };
+
+            html5QrCode.start(
+                cameraId,
+                config,
+                onScanSuccess,
+                (errorMessage) => {
+                    console.log("Scan error:", errorMessage);
+                    // Don't show all errors to user
+                }
+            ).then(() => {
+                console.log("Scanner started successfully");
+                updateStatus("Position the QR code within the frame to scan", "search");
+            }).catch(err => {
+                console.error("Failed to start scanner:", err);
+                handleCameraError(err);
+            });
         }
 
         // Handle camera errors
         function handleCameraError(err) {
             console.error("Camera error:", err);
             let errorMessage = "Could not access camera.";
-            
+
             if (err.name === 'NotAllowedError') {
                 errorMessage = "Camera permission denied. Please allow camera access.";
             } else if (err.name === 'NotFoundError') {
@@ -210,7 +213,7 @@
             } else if (err.name === 'OverconstrainedError') {
                 errorMessage = "Camera doesn't support the required constraints.";
             }
-            
+
             showCameraError(errorMessage);
             disableControls();
         }
@@ -244,7 +247,7 @@
                 showError("Only one camera available");
                 return;
             }
-            
+
             const currentIndex = cameras.findIndex(cam => cam.id === currentCameraId);
             const nextIndex = (currentIndex + 1) % cameras.length;
             startScanner(cameras[nextIndex].id);
@@ -256,31 +259,31 @@
                 showError("Flash not supported in your browser");
                 return;
             }
-            
+
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: { deviceId: currentCameraId }
                 });
                 const track = stream.getVideoTracks()[0];
                 const imageCapture = new ImageCapture(track);
-                
+
                 flashOn = !flashOn;
                 const photoCapabilities = await imageCapture.getPhotoCapabilities();
-                
+
                 if (photoCapabilities.fillLightMode && photoCapabilities.fillLightMode.includes('flash')) {
                     await imageCapture.track.applyConstraints({
                         advanced: [{ fillLightMode: flashOn ? 'flash' : 'off' }]
                     });
-                    
-                    toggleFlashBtn.innerHTML = flashOn 
-                        ? '<i class="fas fa-lightbulb"></i> Flash On' 
+
+                    toggleFlashBtn.innerHTML = flashOn
+                        ? '<i class="fas fa-lightbulb"></i> Flash On'
                         : '<i class="fas fa-lightbulb"></i> Flash Off';
-                    
+
                     toggleFlashBtn.classList.toggle('active', flashOn);
                 } else {
                     showError("Flash not supported on this camera");
                 }
-                
+
                 track.stop();
             } catch (err) {
                 console.error("Flash error:", err);
@@ -325,12 +328,12 @@
                 toggleCameraBtn.style.display = 'none';
                 return;
             }
-            
+
             const currentIndex = cameras.findIndex(cam => cam.id === currentCameraId);
-            const cameraLabel = cameras[currentIndex].label.toLowerCase().includes('back') 
-                ? "Switch to Front Camera" 
+            const cameraLabel = cameras[currentIndex].label.toLowerCase().includes('back')
+                ? "Switch to Front Camera"
                 : "Switch to Back Camera";
-            
+
             toggleCameraBtn.innerHTML = `<i class="fas fa-camera"></i> ${cameraLabel}`;
             toggleCameraBtn.style.display = 'inline-flex';
         }
@@ -338,15 +341,16 @@
         // Initialize when DOM is loaded
         document.addEventListener('DOMContentLoaded', () => {
             initScanner();
-            
+
             if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
                 document.body.classList.add('dark-mode');
             }
-            
+
             window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
                 document.body.classList.toggle('dark-mode', event.matches);
             });
         });
     </script>
 </body>
+
 </html>

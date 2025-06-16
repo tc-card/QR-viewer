@@ -1,343 +1,129 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TC Cards QR Viewer</title>
+    <title>TC Cards QR Scanner</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-
-    <link rel="stylesheet" href="styles.css">
     <style>
-        /* Your existing CSS styles here */
-        .snapshot-preview {
-            position: fixed;
-            top: 0;
-            left: 0;
+        body {
+            font-family: 'Arial', sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            text-align: center;
+        }
+        #reader {
             width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.9);
-            display: none;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
+            margin: 20px auto;
+            position: relative;
         }
-        .snapshot-preview img {
-            max-width: 80%;
-            max-height: 60%;
-            border: 2px solid white;
-            margin-bottom: 20px;
+        #reader__dashboard_section {
+            text-align: center;
         }
-        .snapshot-actions {
-            display: flex;
-            gap: 15px;
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .scanning {
+            background: #e3f2fd;
+            color: #1565c0;
+        }
+        .success {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        .error {
+            background: #ffebee;
+            color: #c62828;
+        }
+        button {
+            background: #2196f3;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
         }
     </style>
 </head>
-
 <body>
-    <div class="container">
-        <header>
-            <h1><i class="fas fa-qrcode"></i> TC Cards QR Scanner</h1>
-            <p>Scan your TC Cards QR code to view the digital card</p>
-        </header>
-
-        <div class="scanner-container" id="scannerContainer">
-            <div id="reader"></div>
-            <div class="scanner-overlay">
-                <div class="scan-line"></div>
-            </div>
-            <div class="camera-fallback" id="cameraFallback">
-                <i class="fas fa-camera-slash"></i>
-                <h3>Camera Not Available</h3>
-                <p id="cameraErrorMsg">Unable to access camera</p>
-                <button id="retryCamera" class="btn">
-                    <i class="fas fa-sync-alt"></i> Retry Camera
-                </button>
-            </div>
-        </div>
-
-        <div class="status-message" id="statusMessage">
-            <i class="fas fa-search"></i>
-            <p>Position the QR code within the frame to scan</p>
-        </div>
-
-        <div class="controls">
-            <button id="toggleCamera" class="btn" disabled>
-                <i class="fas fa-camera"></i> Switch Camera
-            </button>
-            <button id="toggleFlash" class="btn" disabled>
-                <i class="fas fa-lightbulb"></i> Toggle Flash
-            </button>
-        </div>
+    <h1>TC Cards QR Scanner</h1>
+    <p>Scan your TC Cards QR code</p>
     
-    <div class="snapshot-preview" id="snapshotPreview">
-        <img id="snapshotImage" src="" alt="Scanned QR Code">
-        <div class="snapshot-actions">
-            <button id="confirmRedirect" class="btn btn-success">
-                <i class="fas fa-check"></i> Continue
-            </button>
-            <button id="cancelRedirect" class="btn btn-error">
-                <i class="fas fa-times"></i> Cancel
-            </button>
-        </div>
-    </div>
-        <div class="manual-input">
-            <h3>Or enter code manually:</h3>
-            <input type="text" id="manualCode" placeholder="Enter TC Cards code">
-            <button id="submitManual" class="btn">
-                <i class="fas fa-paper-plane"></i> Submit
-            </button>
-        </div>
-
-        <div class="camera-help" id="cameraHelp">
-            <h3><i class="fas fa-question-circle"></i> Camera Troubleshooting</h3>
-            <ul>
-                <li>Ensure you've granted camera permissions</li>
-                <li>Check if another app is using the camera</li>
-                <li>Try refreshing the page</li>
-                <li>Make sure your camera is properly connected</li>
-                <li>Try using a different browser (Chrome/Firefox recommended)</li>
-            </ul>
-        </div>
-    </div>    
-    <!-- Your existing HTML here -->
-
-
+    <div id="reader"></div>
+    <div id="status" class="status scanning">Ready to scan...</div>
+    
     <script>
-        // DOM elements
-        const statusMessage = document.getElementById('statusMessage');
-        const toggleCameraBtn = document.getElementById('toggleCamera');
-        const toggleFlashBtn = document.getElementById('toggleFlash');
-        const manualCodeInput = document.getElementById('manualCode');
-        const submitManualBtn = document.getElementById('submitManual');
-        const cameraFallback = document.getElementById('cameraFallback');
-        const cameraErrorMsg = document.getElementById('cameraErrorMsg');
-        const retryCameraBtn = document.getElementById('retryCamera');
-        const scannerContainer = document.getElementById('scannerContainer');
-        const cameraHelp = document.getElementById('cameraHelp');
-        // Global variables
+        // Configuration
+        const config = {
+            fps: 10,
+            qrbox: 250,
+            supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA],
+            rememberLastUsedCamera: true
+        };
 
-        // Add to your existing global variables
-        let lastDetectedUrl = null;
-        const snapshotPreview = document.getElementById('snapshotPreview');
-        const snapshotImage = document.getElementById('snapshotImage');
-        const confirmRedirect = document.getElementById('confirmRedirect');
-        const cancelRedirect = document.getElementById('cancelRedirect');
+        // Initialize scanner
+        const html5QrCode = new Html5Qrcode("reader");
+        
+        function updateStatus(message, type = 'scanning') {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = `status ${type}`;
+        }
 
-        // Modified onScanSuccess function
-        async function onScanSuccess(decodedText, decodedResult) {
-            // Only process if we're not already showing a preview
-            if (snapshotPreview.style.display === 'flex') return;
-            
-            console.log("Raw scanned text:", decodedText);
-            
-            // Validate the QR code format
-            const tcCardsPattern = /^(https:\/\/)?card\.tccards\.tn\/@id_[a-zA-Z0-9-]+$/;
-            if (!tcCardsPattern.test(decodedText)) {
-                showError("Invalid TC Cards QR code format");
+        function onScanSuccess(decodedText) {
+            // Validate TC Cards format
+            if (!decodedText.includes('card.tccards.tn/@id_')) {
+                updateStatus("Invalid TC Cards QR code", "error");
                 return;
             }
 
-            // Format the URL
-            lastDetectedUrl = decodedText.startsWith('http') ? decodedText : 'https://' + decodedText;
-            
-            try {
-                // Freeze the camera and take snapshot
-                const canvas = document.querySelector('#reader canvas');
-                const imageData = canvas.toDataURL('image/png');
-                
-                // Show preview
-                snapshotImage.src = imageData;
-                snapshotPreview.style.display = 'flex';
-                
-                // Update status
-                updateStatus(`Detected: ${lastDetectedUrl}`, "check", "success");
-                
-            } catch (err) {
-                console.error("Error capturing snapshot:", err);
-                // Fallback to immediate redirect if snapshot fails
-                proceedWithRedirect();
+            // Format URL
+            let url = decodedText;
+            if (!url.startsWith('http')) {
+                url = 'https://' + url;
             }
-        }
-
-        // New functions for handling the preview
-        function proceedWithRedirect() {
-            if (!lastDetectedUrl) return;
+            url = url.replace('http://', 'https://'); // Force HTTPS
             
-            snapshotPreview.style.display = 'none';
-            updateStatus(`Redirecting to: ${lastDetectedUrl}`, "external-link-alt", "success");
+            updateStatus(`Found: ${url} - Redirecting...`, "success");
             
+            // Redirect after brief delay
             setTimeout(() => {
-                window.location.href = lastDetectedUrl;
+                window.location.href = url;
             }, 800);
         }
 
-        function cancelRedirectAction() {
-            snapshotPreview.style.display = 'none';
-            lastDetectedUrl = null;
-            updateStatus("Scan cancelled. Ready to scan again.", "search");
-        }
-
-        // Event listeners for the preview buttons
-        confirmRedirect.addEventListener('click', proceedWithRedirect);
-        cancelRedirect.addEventListener('click', cancelRedirectAction);
-
-        // Handle camera errors
-        function handleCameraError(err) {
-            console.error("Camera error:", err);
-            let errorMessage = "Could not access camera.";
-
-            if (err.name === 'NotAllowedError') {
-                errorMessage = "Camera permission denied. Please allow camera access.";
-            } else if (err.name === 'NotFoundError') {
-                errorMessage = "No camera found on this device.";
-            } else if (err.name === 'NotReadableError') {
-                errorMessage = "Camera is already in use by another application.";
-            } else if (err.name === 'OverconstrainedError') {
-                errorMessage = "Camera doesn't support the required constraints.";
-            }
-
-            showCameraError(errorMessage);
-            disableControls();
-        }
-
-        function showCameraError(message) {
-            cameraErrorMsg.textContent = message;
-            cameraFallback.style.display = 'flex';
-            cameraHelp.style.display = 'block';
-            document.querySelector('.scanner-overlay').style.display = 'none';
-        }
-
-        function hideCameraFallback() {
-            cameraFallback.style.display = 'none';
-            cameraHelp.style.display = 'none';
-            document.querySelector('.scanner-overlay').style.display = 'block';
-        }
-
-        function enableControls() {
-            toggleCameraBtn.disabled = false;
-            toggleFlashBtn.disabled = false;
-        }
-
-        function disableControls() {
-            toggleCameraBtn.disabled = true;
-            toggleFlashBtn.disabled = true;
-        }
-
-        // Event listeners
-        toggleCameraBtn.addEventListener('click', () => {
-            if (cameras.length < 2) {
-                showError("Only one camera available");
-                return;
-            }
-
-            const currentIndex = cameras.findIndex(cam => cam.id === currentCameraId);
-            const nextIndex = (currentIndex + 1) % cameras.length;
-            startScanner(cameras[nextIndex].id);
-            updateCameraButton();
-        });
-
-        toggleFlashBtn.addEventListener('click', async () => {
-            if (!('ImageCapture' in window)) {
-                showError("Flash not supported in your browser");
-                return;
-            }
-
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { deviceId: currentCameraId }
-                });
-                const track = stream.getVideoTracks()[0];
-                const imageCapture = new ImageCapture(track);
-
-                flashOn = !flashOn;
-                const photoCapabilities = await imageCapture.getPhotoCapabilities();
-
-                if (photoCapabilities.fillLightMode && photoCapabilities.fillLightMode.includes('flash')) {
-                    await imageCapture.track.applyConstraints({
-                        advanced: [{ fillLightMode: flashOn ? 'flash' : 'off' }]
+        function startScanner() {
+            Html5Qrcode.getCameras().then(cameras => {
+                if (cameras && cameras.length > 0) {
+                    // Prefer rear camera
+                    const backCamera = cameras.find(cam => 
+                        cam.label.toLowerCase().includes('back') || 
+                        cam.label.toLowerCase().includes('rear'));
+                    
+                    const cameraId = backCamera ? backCamera.id : cameras[0].id;
+                    
+                    html5QrCode.start(
+                        cameraId,
+                        config,
+                        onScanSuccess,
+                        () => {} // Ignore scan errors
+                    ).then(() => {
+                        updateStatus("Ready to scan...", "scanning");
                     });
-
-                    toggleFlashBtn.innerHTML = flashOn
-                        ? '<i class="fas fa-lightbulb"></i> Flash On'
-                        : '<i class="fas fa-lightbulb"></i> Flash Off';
-
-                    toggleFlashBtn.classList.toggle('active', flashOn);
                 } else {
-                    showError("Flash not supported on this camera");
+                    updateStatus("No camera found", "error");
                 }
-
-                track.stop();
-            } catch (err) {
-                console.error("Flash error:", err);
-                showError("Could not toggle flash");
-            }
-        });
-
-        submitManualBtn.addEventListener('click', () => {
-            const code = manualCodeInput.value.trim();
-            if (!code) {
-                showError("Please enter a code");
-                return;
-            }
-            onScanSuccess(code);
-        });
-
-        manualCodeInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                submitManualBtn.click();
-            }
-        });
-
-        retryCameraBtn.addEventListener('click', () => {
-            initScanner();
-        });
-
-        // Helper functions
-        function updateStatus(message, icon, type = 'info') {
-            statusMessage.innerHTML = `<i class="fas fa-${icon}"></i><p>${message}</p>`;
-            statusMessage.className = `status-message ${type}`;
-        }
-
-        function showError(message) {
-            updateStatus(message, "exclamation-triangle", "error");
-            setTimeout(() => {
-                updateStatus("Position the QR code within the frame to scan", "search");
-            }, 3000);
-        }
-
-        function updateCameraButton() {
-            if (cameras.length < 2) {
-                toggleCameraBtn.style.display = 'none';
-                return;
-            }
-
-            const currentIndex = cameras.findIndex(cam => cam.id === currentCameraId);
-            const cameraLabel = cameras[currentIndex].label.toLowerCase().includes('back')
-                ? "Switch to Front Camera"
-                : "Switch to Back Camera";
-
-            toggleCameraBtn.innerHTML = `<i class="fas fa-camera"></i> ${cameraLabel}`;
-            toggleCameraBtn.style.display = 'inline-flex';
-        }
-
-        // Initialize when DOM is loaded
-        document.addEventListener('DOMContentLoaded', () => {
-            initScanner();
-
-            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-                document.body.classList.add('dark-mode');
-            }
-
-            window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
-                document.body.classList.toggle('dark-mode', event.matches);
+            }).catch(err => {
+                updateStatus("Camera error: " + err.message, "error");
             });
-        });
+        }
+
+        // Start when page loads
+        document.addEventListener('DOMContentLoaded', startScanner);
     </script>
 </body>
-
 </html>

@@ -1,14 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>TC Cards QR Scanner</title>
-
-  <!-- Dependencies -->
   <script src="https://unpkg.com/html5-qrcode"></script>
-  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
-
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -24,7 +20,7 @@
       position: relative;
       overflow: hidden;
       border-radius: 8px;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+      background: #000;
     }
     #status {
       padding: 12px;
@@ -33,32 +29,37 @@
       font-weight: bold;
     }
     .scanning { background: #e3f2fd; color: #1565c0; }
-    .success  { background: #e8f5e9; color: #2e7d32; }
-    .error    { background: #ffebee; color: #c62828; }
-
+    .success { background: #e8f5e9; color: #2e7d32; }
+    .error { background: #ffebee; color: #c62828; }
     .scanner-overlay {
       position: absolute;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
       pointer-events: none;
       z-index: 2;
     }
     .scan-box {
       position: absolute;
-      top: 50%; left: 50%;
+      top: 50%;
+      left: 50%;
       transform: translate(-50%, -50%);
-      width: 70%; height: 70%;
-      border: 3px solid #4CAF50;
+      width: 80%;
+      height: 80%;
+      border: 3px solid #00ff00;
       border-radius: 8px;
-      box-shadow: 0 0 0 100vh rgba(0,0,0,0.5);
+      box-shadow: 0 0 0 100vh rgba(0,0,0,0.7);
     }
     .scan-line {
       position: absolute;
-      top: 0; left: 0;
-      width: 100%; height: 4px;
-      background: #4CAF50;
-      animation: scan 2.5s infinite linear;
-      box-shadow: 0 0 10px #4CAF50;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 4px;
+      background: #00ff00;
+      animation: scan 2s infinite linear;
+      box-shadow: 0 0 10px #00ff00;
     }
     @keyframes scan {
       0% { top: 0; opacity: 0; }
@@ -66,7 +67,6 @@
       90% { opacity: 1; }
       100% { top: 100%; opacity: 0; }
     }
-
     #debug {
       text-align: left;
       font-family: monospace;
@@ -78,16 +78,28 @@
       overflow-y: auto;
       box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
-
-    #qr-canvas {
-      display: none;
+    .controls {
+      margin: 20px 0;
+    }
+    button {
+      background: #2196F3;
+      color: white;
+      border: none;
+      padding: 10px 15px;
+      margin: 0 5px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:disabled {
+      background: #cccccc;
+      cursor: not-allowed;
     }
   </style>
 </head>
 <body>
   <h1>TC Cards QR Scanner</h1>
-  <p>Align QR code within the frame</p>
-
+  <p>Align QR code within the green frame</p>
+  
   <div id="reader">
     <div class="scanner-overlay">
       <div class="scan-box">
@@ -95,12 +107,18 @@
       </div>
     </div>
   </div>
-
+  
+  <div class="controls">
+    <button id="focusNear">Focus Near (Macro)</button>
+    <button id="focusFar">Focus Far</button>
+    <button id="autoFocus">Auto Focus</button>
+  </div>
+  
   <div id="status" class="scanning">Initializing camera...</div>
   <div id="debug"></div>
-  <canvas id="qr-canvas"></canvas>
 
   <script>
+    // Debug output
     function debugLog(message) {
       const debugDiv = document.getElementById('debug');
       debugDiv.innerHTML += `<div>${new Date().toLocaleTimeString()}: ${message}</div>`;
@@ -108,6 +126,7 @@
       console.log(message);
     }
 
+    // Update status message
     function updateStatus(message, type = 'scanning') {
       const status = document.getElementById('status');
       status.textContent = message;
@@ -115,119 +134,146 @@
       debugLog(`STATUS: ${message}`);
     }
 
+    // Process scanned text and format URL
     function processScannedText(text) {
       debugLog(`RAW SCAN: "${text}"`);
-      text = text.trim().replace(/^['"]?(.*?)['"]?$/, '$1');
-      const tcCardsPattern = /^((https?:\/\/)?card\.tccards\.tn\/@id_[a-zA-Z0-9-]{36})$/;
-
+      
+      // Normalize text
+      text = text.trim()
+                .replace(/^"(.*)"$/, '$1')
+                .replace(/^'(.*)'$/, '$1')
+                .replace(/\btc\b/gi, '')
+                .trim();
+      
+      // Check for TC Cards pattern
+      const tcCardsPattern = /^(https:\/\/)?card\.tccards\.(in|tn)\/@(id|jd)_[a-zA-Z0-9-]{36}$/;
+      
       if (!tcCardsPattern.test(text)) {
         debugLog("INVALID FORMAT - Doesn't match TC Cards pattern");
         return null;
       }
-
-      const url = text.startsWith('http') ? text : `https://${text.replace(/^\/\//, '')}`;
+      
+      // Construct proper URL
+      const url = text.startsWith('http') ? text : `https://${text}`;
       debugLog(`FORMATTED URL: ${url}`);
       return url;
     }
 
-    async function fallbackScanFromCamera(video) {
-      if (!video || video.readyState !== 4) return;
-
-      const canvas = document.getElementById("qr-canvas");
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-
-      // Invert pixels
-      for (let i = 0; i < imageData.data.length; i += 4) {
-        imageData.data[i] = 255 - imageData.data[i];     // R
-        imageData.data[i+1] = 255 - imageData.data[i+1]; // G
-        imageData.data[i+2] = 255 - imageData.data[i+2]; // B
-      }
-      ctx.putImageData(imageData, 0, 0);
-
-      const code = jsQR(imageData.data, canvas.width, canvas.height);
-      if (code) {
-        debugLog(`jsQR fallback decoded: ${code.data}`);
-        const url = processScannedText(code.data);
-        if (url) {
-          updateStatus("Inverted QR detected! Redirecting...", "success");
-          setTimeout(() => window.location.href = url, 800);
-        } else {
-          updateStatus("Inverted QR invalid", "error");
-        }
-      } else {
-        debugLog("Fallback scan: jsQR found no QR code.");
+    // Focus control functions
+    async function setFocusMode(mode) {
+      const video = document.querySelector('video');
+      if (!video || !video.srcObject) return;
+      
+      const stream = video.srcObject;
+      const track = stream.getVideoTracks()[0];
+      
+      try {
+        await track.applyConstraints({
+          advanced: [{ focusMode: mode }]
+        });
+        updateStatus(`Focus set to: ${mode}`, "scanning");
+        debugLog(`Focus mode changed to: ${mode}`);
+      } catch (err) {
+        debugLog(`Focus error: ${err.message}`);
+        updateStatus(`Focus error: ${err.message}`, "error");
       }
     }
 
+    // Initialize and start scanner with focus controls
     async function startScanner() {
-      debugLog("Initializing scanner...");
+      debugLog("Initializing scanner with focus controls...");
       updateStatus("Loading camera...");
 
       try {
         const cameras = await Html5Qrcode.getCameras();
-        if (cameras.length === 0) throw new Error("No cameras found");
+        debugLog(`Available cameras: ${cameras.map(c => c.label).join(', ')}`);
+        
+        if (cameras.length === 0) {
+          throw new Error("No cameras found");
+        }
 
-        let selectedCamera = cameras.find(cam => !cam.label.toLowerCase().includes('front')) || cameras[0];
+        // Camera selection - prioritize back cameras
+        let selectedCamera = cameras.find(cam => 
+          !cam.label.toLowerCase().includes('front') &&
+          !cam.label.toLowerCase().includes('wide') &&
+          !cam.label.toLowerCase().includes('0.5x')) || cameras[0];
+        
         debugLog(`Selected camera: ${selectedCamera.label}`);
 
-        const html5QrCode = new Html5Qrcode("reader", {
+        const html5QrCode = new Html5Qrcode("reader", { 
           verbose: true,
-          formatsToSupport: [ Html5QrcodeSupportedFormats.QR_CODE ]
+          formatsToSupport: [ Html5QrcodeSupportedFormats.QR_CODE ],
+          experimentalFeatures: {
+            useBarCodeDetectorIfSupported: true,
+            invertedColors: true
+          }
         });
-
+        
+        // Start scanner with focus controls
         await html5QrCode.start(
           selectedCamera.id,
           {
-            fps: 15,
-            qrbox: { width: 250, height: 250 },
+            fps: 10,
+            qrbox: { width: 200, height: 200 },
             disableFlip: false,
+            focusMode: "manual",
+            aspectRatio: 1.0,
             videoConstraints: {
-                width: { ideal: 1920 },
-                height: { ideal: 1080 },
-                facingMode: "environment",
-                deviceId: { exact: selectedCamera.id },
-                focusMode: "continuous" // Add this for continuous autofocus
+              width: { ideal: 1920 },
+              height: { ideal: 1080 },
+              facingMode: "environment",
+              deviceId: { exact: selectedCamera.id },
+              focusMode: "manual"
             }
-
           },
           (decodedText) => {
             const url = processScannedText(decodedText);
             if (url) {
-              updateStatus("Valid TC Card detected!", "success");
-              document.querySelector('.scan-box').style.borderColor = "#2E7D32";
-              document.querySelector('.scan-line').style.background = "#2E7D32";
-              setTimeout(() => window.location.href = url, 800);
+              updateStatus(`Valid TC Card detected! Redirecting...`, "success");
+              document.querySelector('.scan-box').style.borderColor = "#00ff00";
+              document.querySelector('.scan-line').style.background = "#00ff00";
+              
+              setTimeout(() => {
+                window.location.href = url;
+              }, 800);
             } else {
-              updateStatus("Invalid QR – trying inverted...", "error");
-              document.querySelector('.scan-box').style.borderColor = "#C62828";
-              document.querySelector('.scan-line').style.background = "#C62828";
-
-              const video = document.querySelector("video");
-              setTimeout(() => fallbackScanFromCamera(video), 1000);
-
+              updateStatus("Invalid TC Cards QR", "error");
+              document.querySelector('.scan-box').style.borderColor = "#ff0000";
+              document.querySelector('.scan-line').style.background = "#ff0000";
+              
               setTimeout(() => {
                 updateStatus("Ready to scan", "scanning");
-                document.querySelector('.scan-box').style.borderColor = "#4CAF50";
-                document.querySelector('.scan-line').style.background = "#4CAF50";
-              }, 3000);
+                document.querySelector('.scan-box').style.borderColor = "#00ff00";
+                document.querySelector('.scan-line').style.background = "#00ff00";
+              }, 2000);
             }
           },
-          (err) => {
-            debugLog(`html5-qrcode error: ${err}`);
+          (errorMessage) => {
+            debugLog(`Scan error: ${errorMessage}`);
           }
         );
 
-        updateStatus("Ready to scan - align QR code", "scanning");
-      } catch (e) {
-        debugLog(`ERROR: ${e.message}`);
-        updateStatus(`Camera error: ${e.message}`, "error");
+        // Setup focus controls
+        document.getElementById('focusNear').addEventListener('click', () => setFocusMode("near"));
+        document.getElementById('focusFar').addEventListener('click', () => setFocusMode("far"));
+        document.getElementById('autoFocus').addEventListener('click', () => setFocusMode("continuous"));
+
+        updateStatus("Ready to scan - use focus buttons if needed", "scanning");
+
+      } catch (error) {
+        debugLog(`ERROR: ${error.message}`);
+        
+        if (error.name === 'NotAllowedError') {
+          updateStatus("Please allow camera access", "error");
+        } else if (error.name === 'NotFoundError') {
+          updateStatus("No camera available", "error");
+        } else {
+          updateStatus(`Error: ${error.message}`, "error");
+        }
       }
     }
 
+    // Start scanner when page loads
     document.addEventListener('DOMContentLoaded', startScanner);
   </script>
 </body>
